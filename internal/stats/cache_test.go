@@ -1,6 +1,7 @@
 package stats_test
 
 import (
+	"sync"
 	"testing"
 
 	"github.com/convin/webhook-ingest/internal/stats"
@@ -28,5 +29,35 @@ func TestCacheGetUnknownAccountIsZero(t *testing.T) {
 	c := stats.NewCache()
 	if got := c.Get("nobody"); got.CallCount != 0 || got.TotalDurationSec != 0 {
 		t.Fatalf("got %+v, want zero value", got)
+	}
+}
+
+func TestCacheRecordConcurrent(t *testing.T) {
+	const (
+		workers = 20
+		writes  = 100
+	)
+
+	c := stats.NewCache()
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for range workers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			for range writes {
+				c.Record("acc_1", 1)
+			}
+		}()
+	}
+
+	close(start)
+	wg.Wait()
+
+	got := c.Get("acc_1")
+	want := int64(workers * writes)
+	if got.CallCount != want || got.TotalDurationSec != want {
+		t.Fatalf("got %+v, want CallCount=%d TotalDurationSec=%d", got, want, want)
 	}
 }
