@@ -178,3 +178,54 @@ func (s *Store) AccountStats(ctx context.Context, accountID string) (Stats, erro
 	}
 	return st, nil
 }
+
+// AllAccountStats reads the durable aggregates used to warm the in-memory cache.
+func (s *Store) AllAccountStats(ctx context.Context) (map[string]Stats, error) {
+	rows, err := s.pool.Query(ctx,
+		`SELECT account_id, call_count, total_duration_sec FROM account_stats`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[string]Stats)
+	for rows.Next() {
+		var accountID string
+		var st Stats
+		if err := rows.Scan(&accountID, &st.CallCount, &st.TotalDurationSec); err != nil {
+			return nil, err
+		}
+		result[accountID] = st
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// PendingRecordingCallIDs returns durable recording work left by a prior process.
+func (s *Store) PendingRecordingCallIDs(ctx context.Context) ([]string, error) {
+	rows, err := s.pool.Query(ctx,
+		`SELECT call_id FROM calls
+		 WHERE recording_url IS NOT NULL
+		   AND recording_url <> ''
+		   AND recording_processed = FALSE
+		 ORDER BY updated_at`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var callIDs []string
+	for rows.Next() {
+		var callID string
+		if err := rows.Scan(&callID); err != nil {
+			return nil, err
+		}
+		callIDs = append(callIDs, callID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return callIDs, nil
+}

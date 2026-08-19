@@ -35,6 +35,15 @@ func (c *Cache) Get(accountID string) AccountStats {
 	return *s
 }
 
+// Set restores one account's totals from the durable aggregate.
+func (c *Cache) Set(accountID string, value AccountStats) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	snapshot := value
+	c.m[accountID] = &snapshot
+}
+
 // Record folds one completed call into an account's running totals.
 func (c *Cache) Record(accountID string, durationSec int) {
 	c.mu.Lock()

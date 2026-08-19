@@ -165,6 +165,35 @@ func TestRecordingIsProcessedAfterResponse(t *testing.T) {
 	t.Fatal("recording was not marked processed")
 }
 
+func TestPendingRecordingResumesAfterRestart(t *testing.T) {
+	_, st := testutil.NewServer(t)
+	_, callID, accountID := testutil.IDs(t, st)
+	ctx := context.Background()
+
+	if _, err := st.Pool().Exec(ctx,
+		`INSERT INTO calls (call_id, account_id, status, duration_sec, recording_url)
+		 VALUES ($1, $2, 'completed', 10, 'https://recordings.example.com/pending.wav')`,
+		callID, accountID); err != nil {
+		t.Fatalf("insert pending recording: %v", err)
+	}
+
+	_, _ = testutil.NewServer(t)
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		var processed bool
+		if err := st.Pool().QueryRow(ctx,
+			`SELECT recording_processed FROM calls WHERE call_id = $1`, callID).Scan(&processed); err != nil {
+			t.Fatalf("read recording status: %v", err)
+		}
+		if processed {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	t.Fatal("pending recording was not resumed")
+}
+
 func TestStatsSurviveServiceRestart(t *testing.T) {
 	srv, st := testutil.NewServer(t)
 	eventID, callID, accountID := testutil.IDs(t, st)

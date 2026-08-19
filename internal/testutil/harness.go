@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/convin/webhook-ingest/internal/config"
 	"github.com/convin/webhook-ingest/internal/httpapi"
@@ -73,6 +74,14 @@ func NewServer(t *testing.T) (*httptest.Server, *store.Store) {
 
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	svc := ingest.New(s, stats.NewCache(), rdb, log)
+	if err := svc.Start(context.Background()); err != nil {
+		t.Fatalf("start ingestion service: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		_ = svc.Shutdown(ctx)
+	})
 
 	srv := httptest.NewServer(httpapi.NewRouter(svc, log))
 	t.Cleanup(srv.Close)
